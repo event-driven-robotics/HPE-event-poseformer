@@ -114,11 +114,12 @@ def plot_mpjpe_over_time(mpjpe_values):
     plt.figure(figsize=(8, 6))
     plt.plot(range(len(mpjpe_values)), mpjpe_values, color='red', linewidth=2)
     plt.title('MPJPE over Time', fontsize=14)
-    plt.xlabel('Frame Index', fontsize=12)
-    plt.ylabel('MPJPE (mm)', fontsize=12)
+    plt.xlabel('Frame Index', fontsize=14)
+    plt.ylabel('MPJPE (mm)', fontsize=14)
     plt.grid(True)
 
-    plt.xticks(np.arange(0, len(mpjpe_values), 50))  # Add markers every 50 frames
+    plt.xticks(np.arange(0, len(mpjpe_values), 50), fontsize=14)  # Add markers every 50 frames
+    plt.yticks(fontsize=14)
 
     plt.tight_layout()
     plt.show()
