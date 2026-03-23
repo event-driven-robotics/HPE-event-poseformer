@@ -122,11 +122,6 @@ def save_event_video_and_csv(data_dvs_file, output_path, args):
         kp_writer = csv.writer(kp_file)
         kp_writer.writerow(['frame', 'joint', 'x', 'y', 'confidence'])
 
-    if args.write_video:
-        video_output_path = os.path.join(output_path, "event_video.mp4")
-        writer = cv2.VideoWriter(video_output_path, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), args.fps,
-                             (args.frame_width, args.frame_height))
-    
     for fi, (events, pose, batch_size) in enumerate(iterator):
         rep.reset_frame()
         
@@ -154,21 +149,11 @@ def save_event_video_and_csv(data_dvs_file, output_path, args):
             output = np.concatenate((pre['joints'].reshape([-1,2]), pre['confidence'].reshape([-1,1])), axis=1)
             for jid, (x, y, c) in enumerate(output):
                 kp_writer.writerow([fi, jid, float(x), float(y), float(c)])
-        if args.write_video:
-           if len(frame.shape) == 2:
-              frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-
-           writer.write(frame)
     
     # Close the CSV file
     if args.write_csv:
         kp_file.close()
         print(f"Keypoints saved to {kp_csv}")
-
-    # Release the video writer if video saving was enabled
-    if args.write_video:
-        writer.release()
-        print(f"Video saved to: {video_output_path}")
 
 # Part 2: Change 2d pose output CSV file to NPZ
 def convert_csv_to_npz(csv_path, output_path):
@@ -195,46 +180,6 @@ def convert_csv_to_npz(csv_path, output_path):
     np.savez(output_path, keypoints=keypoints)
     print(f"2d pose csv file converted to npz: {output_path}")
 
-# Part 3: Convert 13-joint file to 17-joint
-def convert_13_to_17_joints(input_file, output_file):
-    data = np.load(input_file, allow_pickle=True) 
-    keypoints_13 = data["keypoints"]
-
-    mapping_13 = {
-        'head': 0, 'shoulder_right': 1, 'shoulder_left': 2, 'elbow_right': 3, 'elbow_left': 4,
-        'hip_left': 5, 'hip_right': 6, 'wrist_right': 7, 'wrist_left': 8, 'knee_right': 9,
-        'knee_left': 10, 'ankle_right': 11, 'ankle_left': 12
-    }
-
-    keypoints_17 = np.zeros((keypoints_13.shape[0], 17, 2), dtype=np.float32)
-    print(keypoints_13.shape[0])
-    keypoints_17[:, 0] = (keypoints_13[:, mapping_13['hip_left']] + keypoints_13[:, mapping_13['hip_right']]) / 2
-    keypoints_17[:, 1] = keypoints_13[:, mapping_13['hip_right']]
-    keypoints_17[:, 2] = keypoints_13[:, mapping_13['knee_right']]
-    keypoints_17[:, 3] = keypoints_13[:, mapping_13['ankle_right']]
-    keypoints_17[:, 4] = keypoints_13[:, mapping_13['hip_left']]
-    keypoints_17[:, 5] = keypoints_13[:, mapping_13['knee_left']]
-    keypoints_17[:, 6] = keypoints_13[:, mapping_13['ankle_left']]
-
-    neck = (keypoints_13[:, mapping_13['shoulder_left']] + keypoints_13[:, mapping_13['shoulder_right']]) / 2
-    keypoints_17[:, 8] = neck  # Neck
-
-    keypoints_17[:, 7] = (keypoints_17[:, 8] + keypoints_17[:, 0]) / 2  # Spine
-    nose = keypoints_13[:, mapping_13['head']]
-    head = 2 * nose - neck
-    keypoints_17[:, 9] = nose  # Nose
-    keypoints_17[:, 10] = head  # Head
-
-    keypoints_17[:, 11] = keypoints_13[:, mapping_13['shoulder_left']]  # LShoulder
-    keypoints_17[:, 12] = keypoints_13[:, mapping_13['elbow_left']]  # LElbow
-    keypoints_17[:, 13] = keypoints_13[:, mapping_13['wrist_left']]  # LWrist
-    keypoints_17[:, 14] = keypoints_13[:, mapping_13['shoulder_right']]  # RShoulder
-    keypoints_17[:, 15] = keypoints_13[:, mapping_13['elbow_right']]  # RElbow
-    keypoints_17[:, 16] = keypoints_13[:, mapping_13['wrist_right']]  # RWrist
-
-    np.savez(output_file, keypoints=np.array([keypoints_17]))
-    print(f"2d pose npz file converted to 17 joints: {output_file}")
-
 # Part 4: 3D Pose Estimation (PoseFormerV2)
 
 plt.switch_backend('agg')
@@ -248,14 +193,13 @@ def show2Dpose(kps, img):
     kps = kps[:, :2]
     kps_int = np.rint(kps).astype(int)
 
-    connections = [[0, 1], [1, 2], [2, 3], [0, 4], [4, 5],
-                   [5, 6], [0, 7], [7, 8], [8, 9], [9, 10],
-                   [8, 11], [11, 12], [12, 13], [8, 14], [14, 15], [15, 16]]
-    LR = np.array([0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0], dtype=bool)
+    connections = [(0, 10), (10, 12), (6, 9), (9, 11), (3, 5), (5, 8), (2, 4), (4, 7),
+                   (0, 6), (3, 2), (0, 3), (6, 2), (3, 1), (2, 1)]
+    LR = np.array([1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0], dtype=bool)
 
     lcolor = (255, 0, 0)
     rcolor = (0, 0, 255)
-    thickness = 3
+    thickness = 2
 
     for j, (a, b) in enumerate(connections):
         x1, y1 = kps_int[a]
@@ -272,10 +216,11 @@ def show3Dpose(vals, ax):
     lcolor=(0,0,1)
     rcolor=(1,0,0)
 
-    I = np.array( [0, 0, 1, 4, 2, 5, 0, 7,  8,  8, 14, 15, 11, 12, 8,  9])
-    J = np.array( [1, 4, 2, 5, 3, 6, 7, 8, 14, 11, 15, 16, 12, 13, 9, 10])
+    # DHP19 13 connections
+    I = np.array([0, 10, 6, 9, 3, 5, 2, 4, 0, 3, 0, 6, 3, 2])
+    J = np.array([10, 12, 9, 11, 5, 8, 4, 7, 6, 2, 3, 2, 1, 1])
 
-    LR = np.array([0, 1, 0, 1, 0, 1, 0, 0, 0,   1,  0,  0,  1,  1, 0, 0], dtype=bool)
+    LR = np.array([1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 0], dtype=bool)
 
     for i in np.arange( len(I) ):
         x, y, z = [np.array( [vals[I[i], j], vals[J[i], j]] ) for j in range(3)]
@@ -299,10 +244,8 @@ def show3Dpose(vals, ax):
     ax.tick_params('y', labelleft = False)
     ax.tick_params('z', labelleft = False)
 
-def img2video(video_path, output_dir):
-    cap = cv2.VideoCapture(video_path + '/event_video.mp4')
-    fps = int(cap.get(cv2.CAP_PROP_FPS)) + 5
-    print("Extracted FPS:", fps)
+def img2video(video_path, output_dir, fps=50):
+    print("Using FPS for video generation:", fps)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
@@ -361,7 +304,7 @@ def load_model_weights(model, ckpt_path, device, gpu):
         raise e
     
 def save_predictions_3d(all_predictions, output_dir, filename='predictions_3d.npz'):
-    all_predictions = np.concatenate(all_predictions, axis=0)  # Concatenate predictions from all clips
+    all_predictions = np.stack(all_predictions, axis=0)  # Stack to preserve (Frames, 13, 3) shape
     output_path = os.path.join(output_dir, filename)
     np.savez_compressed(output_path, predictions=all_predictions)
     print(f"All predictions saved to {output_path}")
@@ -370,7 +313,7 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
     args = argparse.Namespace(
         embed_dim_ratio=32, depth=4, frames=243, number_of_kept_frames=27,
         number_of_kept_coeffs=27, pad=(243 - 1) // 2, previous_dir='PoseFormerV2-main/checkpoint/',
-        n_joints=17, out_joints=17
+        n_joints=13, out_joints=13, frame_width=346, frame_height=260
     )
 
     # Select device
@@ -378,21 +321,19 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
     print(f"Using device: {device}")
 
     # Initialize model
-    model = Model(args=args)
+    model = Model(num_frame=args.frames, num_joints=args.n_joints, args=args)
     if device.type == "cuda":
         model = nn.DataParallel(model).to(device)
     else:
         model = model.to(device)
 
     # Load weights
-    model_path = sorted(glob.glob(os.path.join(args.previous_dir, '27_243_45.2.bin')))[0]
+    model_path = sorted(glob.glob(os.path.join(args.previous_dir, 'dhp19_27_243.bin')))[0]
     load_model_weights(model, model_path, device, gpu)
     model.eval()
 
     # Load 2D keypoints
-    keypoints = np.load(video_path + '/keypoints_17.npz', allow_pickle=True)['keypoints']
-    cap = cv2.VideoCapture(video_path + '/event_video.mp4')
-    video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    keypoints = np.load(video_path + '/moveEnet_keypoints.npz', allow_pickle=True)['keypoints']
 
     output_dir_2D = output_dir + '/pose2D/'
     output_dir_3D = output_dir + '/pose3D/'
@@ -411,12 +352,19 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
   
     num_frames = kp.shape[0]
     print("Total frames to process:", num_frames)
-    loop_len = max(video_length, num_frames)
+
+    # Reorder keypoints from moveEnet (Head=0, ShR=1, ShL=2, ElbR=3, ElbL=4, HipL=5, HipR=6, WriR=7, WriL=8, KneeR=9, KneeL=10, AnkR=11, AnkL=12)
+    # to Model Order (HipL=0, Head=1, ShR=2, ShL=3, ElbR=4, ElbL=5, HipR=6, WriR=7, WriL=8, KneeR=9, KneeL=10, AnkR=11, AnkL=12)
+    # Mapping: Input 5->0, 0->1, 1->2, 2->3, 3->4, 4->5, 6->6, 7->7, 8->8, 9->9, 10->10, 11->11, 12->12
+    reorder = [5, 0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12]
+    kp = kp[:, reorder, :]
+    print("Keypoints reordered to model logic.")
+
+    loop_len = num_frames
     print("Using causal mode:", causal)
-    ret, img = cap.read()
-    # if img is None:
-        # continue
-    img_size = img.shape
+    # Use blank image since event_video is removed
+    img_size = (args.frame_height, args.frame_width, 3)
+    img = np.zeros(img_size, dtype=np.uint8)
 
     for i in tqdm(range(loop_len)):
         if causal:
@@ -452,12 +400,21 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
                     right_pad = i + args.pad - (num_frames - 1)
                 input_2D_no = np.pad(input_2D_no,((left_pad, right_pad), (0, 0), (0, 0)),mode='edge')
 
-        # Normalize
-        input_2D = normalize_screen_coordinates(input_2D_no, w=img_size[1], h=img_size[0])
+        # Flip Y to match training-data convention:
+        # GT 2D (data_2d_dhp19_gt.npz) stores head at large Y (DVS native, y increases downward
+        # so head appears at large y values). MoveEnet uses standard image convention where
+        # head is at small y. Flip y so MoveEnet keypoints match what the model was trained on.
+        input_2D_no = input_2D_no.copy()
+        input_2D_no[:, :, 1] = (args.frame_height - 1) - input_2D_no[:, :, 1]  # flip Y: MoveEnet head=small-y, GT 2D head=large-y
+
+        # Normalize (DHP19 DVS resolution: 346w x 260h)
+        input_2D = normalize_screen_coordinates(input_2D_no, w=args.frame_width, h=args.frame_height)
         
-        # Flip Augmentation
-        joints_left  = [4, 5, 6, 11, 12, 13]
-        joints_right = [1, 2, 3, 14, 15, 16]
+        # Flip Augmentation for DHP19 (13 joints, after reordering: HipL=0, Head=1, ShR=2, ShL=3, ...)
+        # Left: HipL(0), ShL(3), ElbL(5), WriL(8), KneeL(10), FootL(12)
+        # Right: HipR(6), ShR(2), ElbR(4), WriR(7), KneeR(9), FootR(11)
+        joints_left  = [0, 3, 5, 8, 10, 12]
+        joints_right = [6, 2, 4, 7, 9, 11]
         
         input_2D_aug = copy.deepcopy(input_2D)
         input_2D_aug[:, :, 0] *= -1  # mirror x-coordinates
@@ -483,10 +440,12 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
 
         output_3D[:, :, 0, :] = 0
         post_out = output_3D[0, 0].cpu().detach().numpy()
-
-        rot = np.array([0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088], dtype='float32')
-        post_out = camera_to_world(post_out, R=rot, t=0)
-        post_out[:, 2] -= np.min(post_out[:, 2])
+        
+        # Scale to mm (DHP19 model output is in normalized units, *100 -> mm)
+        post_out *= 100
+        
+        # --- Re-center relative to hipL (index 0) ---
+        post_out = post_out - post_out[0:1, :]
 
         if save_images:
             os.makedirs(output_dir_2D, exist_ok=True)
@@ -547,7 +506,7 @@ def get_pose3D(video_path, output_dir, save_images=True, save_demo=True, gpu=Fal
             plt.clf()
             plt.close(fig)
             
-        img2video(video_path, output_dir)
+        img2video(video_path, output_dir, fps=50)
 
 # Main function to integrate all parts
 def main():
@@ -555,7 +514,6 @@ def main():
     parser.add_argument('--event_input_path', type=str, required=True, help='Path to the event input folder')
     parser.add_argument('--output_dir', type=str, required=True, help='Output directory for results')
     parser.add_argument('--write_csv', type=str2bool, nargs='?', const=True, default=True, help='Write 2D keypoints to CSV')
-    parser.add_argument("--write_video", type=str2bool, nargs='?', const=True, default=True, help="Write event video")
     parser.add_argument("--skip_2d", action='store_true', help="Skip 2D pose estimation step")
     parser.add_argument('--save_images', action='store_true', help='Save 2D and 3D pose images (optional)')
     parser.add_argument('--save_demo', action='store_true', help='Generate demo video (optional)')
@@ -589,9 +547,8 @@ def main():
     npz_output_path = os.path.join(output_dir_current, "moveEnet_keypoints.npz")
     convert_csv_to_npz(csv_input_path, npz_output_path)
 
-    # Step 3: Convert 13-joint keypoints to 17-joint keypoints
-    keypoints_17_output = os.path.join(output_dir_current, "keypoints_17.npz")
-    convert_13_to_17_joints(npz_output_path, keypoints_17_output)
+    # Step 3: Skip 17-joint conversion and use moveEnet_keypoints.npz directly
+    print("Skipping 17-joint conversion as model now uses 13 joints.")
 
     # Step 4: Generate 3D Pose from the 2D keypoints
     get_pose3D(output_dir_current, output_dir_current, save_images=args.save_images, save_demo=args.save_demo, gpu=args.gpu, causal=args.causal)
