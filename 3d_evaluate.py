@@ -83,7 +83,7 @@ def main(pred_path, subject_name, activity_name, frame_idx=0, plot=False):
     plot_skeleton_3d(pred_aligned, gt_aligned, frame_idx)
     
 def match_fps(predictions, gt_poses, fps_pred, fps_gt):
-    """f
+    """
     Downsample the higher-FPS sequence so both run at the same FPS.
     Assumes integer ratio (e.g., 50 -> 25, 60 -> 30, etc.).
     """
